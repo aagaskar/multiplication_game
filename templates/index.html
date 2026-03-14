@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multiplication Climber!</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(180deg, #87CEEB 0%, #98e0a3 70%, #5a8f3c 100%);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .game-container {
+    display: flex;
+    gap: 60px;
+    align-items: flex-end;
+    position: relative;
+  }
+
+  /* --- Ladder & Climber --- */
+  .ladder-area {
+    position: relative;
+    width: 120px;
+    height: 520px;
+  }
+
+  .ladder {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 500px;
+  }
+
+  /* SVG ladder drawn in JS */
+
+  .climber-wrap {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 10px;
+    transition: bottom 0.45s cubic-bezier(.34,1.56,.64,1);
+    z-index: 2;
+  }
+
+  .climber-wrap.wobble {
+    animation: wobble 0.35s ease-in-out infinite alternate;
+  }
+
+  .climber-wrap.falling {
+    transition: bottom 0.6s cubic-bezier(.55,.06,.68,.19);
+  }
+
+  @keyframes wobble {
+    0%   { transform: translateX(-50%) rotate(-8deg); }
+    100% { transform: translateX(-50%) rotate(8deg); }
+  }
+
+  /* ground */
+  .ground {
+    position: absolute;
+    bottom: 0;
+    left: -30px;
+    right: -30px;
+    height: 14px;
+    background: #5a3e1b;
+    border-radius: 4px;
+  }
+
+  /* --- Question panel --- */
+  .panel {
+    background: rgba(255,255,255,0.92);
+    border-radius: 20px;
+    padding: 40px 48px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    text-align: center;
+    min-width: 340px;
+  }
+
+  .streak-bar {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 8px;
+  }
+  .streak-bar span {
+    font-weight: 700;
+    color: #e8540a;
+    font-size: 22px;
+  }
+
+  .best-bar {
+    font-size: 13px;
+    color: #999;
+    margin-bottom: 24px;
+  }
+  .best-bar span { font-weight: 600; color: #777; }
+
+  .question {
+    font-size: 56px;
+    font-weight: 800;
+    color: #333;
+    margin-bottom: 28px;
+    letter-spacing: 2px;
+  }
+
+  .answer-input {
+    font-size: 36px;
+    width: 160px;
+    text-align: center;
+    padding: 8px 0;
+    border: 3px solid #ccc;
+    border-radius: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+    font-weight: 600;
+    color: #333;
+  }
+  .answer-input:focus { border-color: #5b9fff; }
+  .answer-input.correct { border-color: #34c759; background: #eafbef; }
+  .answer-input.wrong   { border-color: #ff3b30; background: #ffeae9; }
+
+  .feedback {
+    margin-top: 18px;
+    font-size: 22px;
+    font-weight: 700;
+    min-height: 32px;
+  }
+  .feedback.correct { color: #34c759; }
+  .feedback.wrong   { color: #ff3b30; }
+
+  .timer-bar-container {
+    margin-top: 20px;
+    height: 8px;
+    background: #eee;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .timer-bar {
+    height: 100%;
+    background: #34c759;
+    border-radius: 4px;
+    transition: width 0.1s linear, background 0.3s;
+    width: 100%;
+  }
+  .timer-bar.warning { background: #ff9500; }
+  .timer-bar.danger  { background: #ff3b30; }
+
+  .start-btn {
+    margin-top: 20px;
+    padding: 14px 40px;
+    font-size: 20px;
+    font-weight: 700;
+    background: #5b9fff;
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .start-btn:hover { background: #3a80e0; }
+
+  /* Clouds */
+  .cloud {
+    position: fixed;
+    background: white;
+    border-radius: 50%;
+    opacity: 0.7;
+  }
+  .cloud::before, .cloud::after {
+    content: '';
+    position: absolute;
+    background: white;
+    border-radius: 50%;
+  }
+  .cloud-1 { width:90px;height:36px;top:8%;left:5%; animation: drift 30s linear infinite; }
+  .cloud-1::before { width:44px;height:44px;top:-20px;left:14px; }
+  .cloud-1::after  { width:34px;height:34px;top:-12px;left:44px; }
+  .cloud-2 { width:70px;height:28px;top:15%;right:10%; animation: drift 40s linear infinite reverse; }
+  .cloud-2::before { width:36px;height:36px;top:-16px;left:10px; }
+  .cloud-2::after  { width:28px;height:28px;top:-10px;left:34px; }
+  .cloud-3 { width:100px;height:40px;top:4%;left:45%; animation: drift 35s linear infinite; }
+  .cloud-3::before { width:50px;height:50px;top:-24px;left:18px; }
+  .cloud-3::after  { width:38px;height:38px;top:-14px;left:52px; }
+
+  @keyframes drift {
+    0%   { transform: translateX(0); }
+    50%  { transform: translateX(60px); }
+    100% { transform: translateX(0); }
+  }
+
+  /* Stars burst on correct */
+  .star-burst {
+    position: absolute;
+    pointer-events: none;
+  }
+  .star {
+    position: absolute;
+    font-size: 20px;
+    animation: starPop 0.7s ease-out forwards;
+  }
+  @keyframes starPop {
+    0%   { opacity: 1; transform: translate(0,0) scale(1); }
+    100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0.3); }
+  }
+</style>
+</head>
+<body>
+
+<div class="cloud cloud-1"></div>
+<div class="cloud cloud-2"></div>
+<div class="cloud cloud-3"></div>
+
+<div class="game-container">
+  <!-- Ladder side -->
+  <div class="ladder-area">
+    <svg class="ladder" viewBox="0 0 60 500" xmlns="http://www.w3.org/2000/svg">
+      <!-- side rails -->
+      <rect x="8" y="0" width="6" height="500" rx="3" fill="#8B5E3C"/>
+      <rect x="46" y="0" width="6" height="500" rx="3" fill="#8B5E3C"/>
+      <!-- rungs -->
+      <line x1="14" y1="460" x2="46" y2="460" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="414" x2="46" y2="414" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="368" x2="46" y2="368" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="322" x2="46" y2="322" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="276" x2="46" y2="276" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="230" x2="46" y2="230" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="184" x2="46" y2="184" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="138" x2="46" y2="138" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="92"  x2="46" y2="92"  stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="46"  x2="46" y2="46"  stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+    </svg>
+
+    <div class="climber-wrap" id="climber">
+      <!-- little character SVG -->
+      <svg width="48" height="56" viewBox="0 0 48 56" xmlns="http://www.w3.org/2000/svg">
+        <!-- body -->
+        <rect x="14" y="22" width="20" height="20" rx="4" fill="#ff6b35"/>
+        <!-- head -->
+        <circle cx="24" cy="14" r="12" fill="#ffd166"/>
+        <!-- eyes -->
+        <circle cx="20" cy="12" r="2" fill="#333"/>
+        <circle cx="28" cy="12" r="2" fill="#333"/>
+        <!-- mouth (smile) -->
+        <path d="M19 18 Q24 23 29 18" stroke="#333" stroke-width="1.5" fill="none" stroke-linecap="round" id="mouth"/>
+        <!-- arms -->
+        <rect x="4" y="24" width="10" height="5" rx="2.5" fill="#ffd166"/>
+        <rect x="34" y="24" width="10" height="5" rx="2.5" fill="#ffd166"/>
+        <!-- legs -->
+        <rect x="16" y="42" width="6" height="12" rx="3" fill="#5b9fff"/>
+        <rect x="26" y="42" width="6" height="12" rx="3" fill="#5b9fff"/>
+      </svg>
+    </div>
+    <div class="ground"></div>
+  </div>
+
+  <!-- Question panel -->
+  <div class="panel">
+    <div class="streak-bar">Streak: <span id="streak">0</span></div>
+    <div class="best-bar">Best: <span id="best">0</span></div>
+    <div class="question" id="question">Ready?</div>
+    <input class="answer-input" id="answer" type="number" autocomplete="off" disabled>
+    <div class="feedback" id="feedback"></div>
+    <div class="timer-bar-container">
+      <div class="timer-bar" id="timer-bar"></div>
+    </div>
+    <button class="start-btn" id="start-btn">Start!</button>
+  </div>
+</div>
+
+<script>
+const WOBBLE_TIME  = 5000;
+const FALL_TIME    = 10000;
+const MAX_STREAK   = 10;   // top of ladder
+const RUNG_PX      = 46;   // pixels per rung
+
+const climber   = document.getElementById('climber');
+const qEl       = document.getElementById('question');
+const input     = document.getElementById('answer');
+const fbEl      = document.getElementById('feedback');
+const streakEl  = document.getElementById('streak');
+const bestEl    = document.getElementById('best');
+const timerBar  = document.getElementById('timer-bar');
+const startBtn  = document.getElementById('start-btn');
+
+let streak = 0;
+let best   = 0;
+let current = null;   // {a, b, answer}
+let questionStart = 0;
+let timerRAF = null;
+let wobbling = false;
+let gameActive = false;
+
+function setClimberPos(rung, animate = true) {
+  const bottom = 10 + rung * RUNG_PX;
+  if (!animate) climber.style.transition = 'none';
+  climber.style.bottom = bottom + 'px';
+  if (!animate) requestAnimationFrame(() => climber.style.transition = '');
+}
+
+async function fetchQuestion() {
+  const r = await fetch('/api/question');
+  return r.json();
+}
+
+function showQuestion(q) {
+  current = q;
+  qEl.textContent = `${q.a} × ${q.b}`;
+  input.value = '';
+  input.disabled = false;
+  input.className = 'answer-input';
+  fbEl.textContent = '';
+  fbEl.className = 'feedback';
+  input.focus();
+  questionStart = Date.now();
+  wobbling = false;
+  climber.classList.remove('wobble');
+  startTimer();
+}
+
+function startTimer() {
+  cancelAnimationFrame(timerRAF);
+  (function tick() {
+    if (!gameActive) return;
+    const elapsed = Date.now() - questionStart;
+    const pct = Math.max(0, 100 - (elapsed / FALL_TIME) * 100);
+    timerBar.style.width = pct + '%';
+
+    if (elapsed >= WOBBLE_TIME && !wobbling) {
+      wobbling = true;
+      climber.classList.add('wobble');
+      timerBar.classList.add('warning');
+    }
+    if (elapsed >= FALL_TIME * 0.8) {
+      timerBar.classList.remove('warning');
+      timerBar.classList.add('danger');
+    }
+    if (elapsed >= FALL_TIME) {
+      handleTimeout();
+      return;
+    }
+    timerRAF = requestAnimationFrame(tick);
+  })();
+}
+
+function handleTimeout() {
+  cancelAnimationFrame(timerRAF);
+  fbEl.textContent = `Time's up! ${current.a} × ${current.b} = ${current.answer}`;
+  fbEl.className = 'feedback wrong';
+  input.className = 'answer-input wrong';
+  input.disabled = true;
+  triggerFall();
+}
+
+function triggerFall() {
+  climber.classList.remove('wobble');
+  climber.classList.add('falling');
+  streak = 0;
+  streakEl.textContent = streak;
+  setClimberPos(0);
+  // change mouth to sad
+  document.getElementById('mouth').setAttribute('d', 'M19 20 Q24 16 29 20');
+  setTimeout(() => {
+    climber.classList.remove('falling');
+    document.getElementById('mouth').setAttribute('d', 'M19 18 Q24 23 29 18');
+    nextRound();
+  }, 1200);
+}
+
+function burstStars() {
+  const rect = climber.getBoundingClientRect();
+  const container = document.createElement('div');
+  container.className = 'star-burst';
+  container.style.left = rect.left + rect.width / 2 + 'px';
+  container.style.top  = rect.top + 'px';
+  container.style.position = 'fixed';
+  const emojis = ['⭐','✨','🌟','💫'];
+  for (let i = 0; i < 6; i++) {
+    const s = document.createElement('span');
+    s.className = 'star';
+    s.textContent = emojis[i % emojis.length];
+    const angle = (Math.PI * 2 / 6) * i;
+    s.style.setProperty('--tx', Math.cos(angle) * 50 + 'px');
+    s.style.setProperty('--ty', Math.sin(angle) * 50 + 'px');
+    container.appendChild(s);
+  }
+  document.body.appendChild(container);
+  setTimeout(() => container.remove(), 800);
+}
+
+function handleCorrect() {
+  cancelAnimationFrame(timerRAF);
+  streak++;
+  if (streak > best) { best = streak; bestEl.textContent = best; }
+  streakEl.textContent = streak;
+
+  fbEl.textContent = 'Correct!';
+  fbEl.className = 'feedback correct';
+  input.className = 'answer-input correct';
+  input.disabled = true;
+  climber.classList.remove('wobble');
+  timerBar.style.width = '100%';
+  timerBar.className = 'timer-bar';
+
+  const rung = Math.min(streak, MAX_STREAK);
+  setClimberPos(rung);
+  burstStars();
+
+  if (streak >= MAX_STREAK) {
+    fbEl.textContent = 'You reached the top! Amazing!';
+    setTimeout(() => {
+      streak = 0;
+      streakEl.textContent = 0;
+      setClimberPos(0);
+      nextRound();
+    }, 2000);
+  } else {
+    nextRound();
+  }
+}
+
+function handleWrong() {
+  cancelAnimationFrame(timerRAF);
+  fbEl.textContent = `Nope! ${current.a} × ${current.b} = ${current.answer}`;
+  fbEl.className = 'feedback wrong';
+  input.className = 'answer-input wrong';
+  input.disabled = true;
+  triggerFall();
+}
+
+async function nextRound() {
+  const q = await fetchQuestion();
+  setTimeout(() => showQuestion(q), 600);
+}
+
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !input.disabled && input.value !== '') {
+    const val = parseInt(input.value, 10);
+    if (val === current.answer) {
+      handleCorrect();
+    } else {
+      handleWrong();
+    }
+  }
+});
+
+startBtn.addEventListener('click', async () => {
+  startBtn.style.display = 'none';
+  gameActive = true;
+  streak = 0;
+  best = 0;
+  streakEl.textContent = 0;
+  bestEl.textContent = 0;
+  setClimberPos(0, false);
+  timerBar.style.width = '100%';
+  timerBar.className = 'timer-bar';
+  const q = await fetchQuestion();
+  showQuestion(q);
+});
+</script>
+</body>
+</html>
