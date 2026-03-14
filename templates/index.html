@@ -22,6 +22,7 @@
     gap: 60px;
     align-items: flex-end;
     position: relative;
+    transition: transform 0.45s ease;
   }
 
   /* --- Ladder & Climber --- */
@@ -29,6 +30,7 @@
     position: relative;
     width: 120px;
     height: 520px;
+    transition: height 0.45s ease;
   }
 
   .ladder {
@@ -37,7 +39,7 @@
     left: 50%;
     transform: translateX(-50%);
     width: 60px;
-    height: 500px;
+    transition: height 0.45s ease;
   }
 
   /* SVG ladder drawn in JS */
@@ -221,21 +223,7 @@
 <div class="game-container">
   <!-- Ladder side -->
   <div class="ladder-area">
-    <svg class="ladder" viewBox="0 0 60 500" xmlns="http://www.w3.org/2000/svg">
-      <!-- side rails -->
-      <rect x="8" y="0" width="6" height="500" rx="3" fill="#8B5E3C"/>
-      <rect x="46" y="0" width="6" height="500" rx="3" fill="#8B5E3C"/>
-      <!-- rungs -->
-      <line x1="14" y1="460" x2="46" y2="460" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
-      <line x1="14" y1="414" x2="46" y2="414" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
-      <line x1="14" y1="368" x2="46" y2="368" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
-      <line x1="14" y1="322" x2="46" y2="322" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
-      <line x1="14" y1="276" x2="46" y2="276" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
-      <line x1="14" y1="230" x2="46" y2="230" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
-      <line x1="14" y1="184" x2="46" y2="184" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
-      <line x1="14" y1="138" x2="46" y2="138" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
-      <line x1="14" y1="92"  x2="46" y2="92"  stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
-      <line x1="14" y1="46"  x2="46" y2="46"  stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+    <svg class="ladder" id="ladder-svg" xmlns="http://www.w3.org/2000/svg">
     </svg>
 
     <div class="climber-wrap" id="climber">
@@ -278,17 +266,20 @@
 <script>
 const WOBBLE_TIME  = 5000;
 const FALL_TIME    = 10000;
-const MAX_STREAK   = 10;   // top of ladder
 const RUNG_PX      = 46;   // pixels per rung
+const BASE_RUNGS   = 10;   // initial visible rungs
 
-const climber   = document.getElementById('climber');
-const qEl       = document.getElementById('question');
-const input     = document.getElementById('answer');
-const fbEl      = document.getElementById('feedback');
-const streakEl  = document.getElementById('streak');
-const bestEl    = document.getElementById('best');
-const timerBar  = document.getElementById('timer-bar');
-const startBtn  = document.getElementById('start-btn');
+const climber      = document.getElementById('climber');
+const ladderSvg    = document.getElementById('ladder-svg');
+const ladderArea   = document.querySelector('.ladder-area');
+const gameContainer= document.querySelector('.game-container');
+const qEl          = document.getElementById('question');
+const input        = document.getElementById('answer');
+const fbEl         = document.getElementById('feedback');
+const streakEl     = document.getElementById('streak');
+const bestEl       = document.getElementById('best');
+const timerBar     = document.getElementById('timer-bar');
+const startBtn     = document.getElementById('start-btn');
 
 let streak = 0;
 let best   = 0;
@@ -297,12 +288,74 @@ let questionStart = 0;
 let timerRAF = null;
 let wobbling = false;
 let gameActive = false;
+let drawnRungs = 0;
+
+function buildLadder(numRungs) {
+  if (numRungs <= drawnRungs) return;
+  const h = 20 + numRungs * RUNG_PX;
+  ladderSvg.setAttribute('viewBox', `0 0 60 ${h}`);
+  ladderSvg.style.height = h + 'px';
+  ladderSvg.innerHTML = '';
+
+  // side rails
+  const r1 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  r1.setAttribute('x','8'); r1.setAttribute('y','0');
+  r1.setAttribute('width','6'); r1.setAttribute('height', h);
+  r1.setAttribute('rx','3'); r1.setAttribute('fill','#8B5E3C');
+  ladderSvg.appendChild(r1);
+
+  const r2 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  r2.setAttribute('x','46'); r2.setAttribute('y','0');
+  r2.setAttribute('width','6'); r2.setAttribute('height', h);
+  r2.setAttribute('rx','3'); r2.setAttribute('fill','#8B5E3C');
+  ladderSvg.appendChild(r2);
+
+  // rungs
+  for (let i = 0; i < numRungs; i++) {
+    const y = h - 20 - i * RUNG_PX;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1','14'); line.setAttribute('x2','46');
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('stroke','#a0723c');
+    line.setAttribute('stroke-width','5');
+    line.setAttribute('stroke-linecap','round');
+    ladderSvg.appendChild(line);
+  }
+
+  // update ladder area height
+  ladderArea.style.height = (h + 20) + 'px';
+  drawnRungs = numRungs;
+}
+
+function scrollToClimber() {
+  const viewH = window.innerHeight;
+  const climberBottom = 10 + streak * RUNG_PX;
+  // If the climber would be above the visible area, shift the container down
+  const maxVisible = viewH * 0.65; // keep climber in lower 65% of screen
+  if (climberBottom > maxVisible) {
+    const shift = climberBottom - maxVisible;
+    gameContainer.style.transform = `translateY(${shift}px)`;
+  } else {
+    gameContainer.style.transform = 'translateY(0)';
+  }
+}
 
 function setClimberPos(rung, animate = true) {
+  // Grow ladder if needed (always stay 3 rungs ahead)
+  const needed = Math.max(BASE_RUNGS, rung + 3);
+  buildLadder(needed);
+
   const bottom = 10 + rung * RUNG_PX;
   if (!animate) climber.style.transition = 'none';
   climber.style.bottom = bottom + 'px';
   if (!animate) requestAnimationFrame(() => climber.style.transition = '');
+
+  // Scroll view to follow climber
+  if (animate) {
+    setTimeout(() => scrollToClimber(), 50);
+  } else {
+    gameContainer.style.transform = 'translateY(0)';
+  }
 }
 
 async function fetchQuestion() {
@@ -373,6 +426,10 @@ function triggerFall() {
   streak = 0;
   streakEl.textContent = streak;
   setClimberPos(0);
+  gameContainer.style.transform = 'translateY(0)';
+  // reset ladder back to base size
+  drawnRungs = 0;
+  buildLadder(BASE_RUNGS);
   // change mouth to sad
   document.getElementById('mouth').setAttribute('d', 'M19 20 Q24 16 29 20');
   setTimeout(() => {
@@ -417,21 +474,9 @@ function handleCorrect() {
   timerBar.style.width = '100%';
   timerBar.className = 'timer-bar';
 
-  const rung = Math.min(streak, MAX_STREAK);
-  setClimberPos(rung);
+  setClimberPos(streak);
   burstStars();
-
-  if (streak >= MAX_STREAK) {
-    fbEl.textContent = 'You reached the top! Amazing!';
-    setTimeout(() => {
-      streak = 0;
-      streakEl.textContent = 0;
-      setClimberPos(0);
-      nextRound();
-    }, 2000);
-  } else {
-    nextRound();
-  }
+  nextRound();
 }
 
 function handleWrong() {
@@ -465,6 +510,9 @@ input.addEventListener('keydown', (e) => {
   }
 });
 
+// Build initial ladder
+buildLadder(BASE_RUNGS);
+
 startBtn.addEventListener('click', async () => {
   startBtn.disabled = true;
   try {
@@ -475,6 +523,8 @@ startBtn.addEventListener('click', async () => {
     best = 0;
     streakEl.textContent = 0;
     bestEl.textContent = 0;
+    drawnRungs = 0;
+    buildLadder(BASE_RUNGS);
     setClimberPos(0, false);
     timerBar.style.width = '100%';
     timerBar.className = 'timer-bar';
