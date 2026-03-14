@@ -266,7 +266,7 @@
     <div class="streak-bar">Streak: <span id="streak">0</span></div>
     <div class="best-bar">Best: <span id="best">0</span></div>
     <div class="question" id="question">Ready?</div>
-    <input class="answer-input" id="answer" type="number" autocomplete="off" disabled>
+    <input class="answer-input" id="answer" type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" disabled>
     <div class="feedback" id="feedback"></div>
     <div class="timer-bar-container">
       <div class="timer-bar" id="timer-bar"></div>
@@ -306,8 +306,16 @@ function setClimberPos(rung, animate = true) {
 }
 
 async function fetchQuestion() {
-  const r = await fetch('/api/question');
-  return r.json();
+  try {
+    const r = await fetch('/api/question');
+    return await r.json();
+  } catch (e) {
+    console.error('Failed to fetch question:', e);
+    // Generate locally as fallback
+    const a = Math.floor(Math.random() * 11) + 2;
+    const b = Math.floor(Math.random() * 11) + 2;
+    return { a, b, answer: a * b };
+  }
 }
 
 function showQuestion(q) {
@@ -440,9 +448,15 @@ async function nextRound() {
   setTimeout(() => showQuestion(q), 600);
 }
 
+// Only allow digits
+input.addEventListener('input', () => {
+  input.value = input.value.replace(/[^0-9]/g, '');
+});
+
 input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !input.disabled && input.value !== '') {
-    const val = parseInt(input.value, 10);
+  if (e.key === 'Enter' && !input.disabled && input.value.trim() !== '') {
+    const val = parseInt(input.value.trim(), 10);
+    if (isNaN(val)) return;
     if (val === current.answer) {
       handleCorrect();
     } else {
@@ -452,17 +466,23 @@ input.addEventListener('keydown', (e) => {
 });
 
 startBtn.addEventListener('click', async () => {
-  startBtn.style.display = 'none';
-  gameActive = true;
-  streak = 0;
-  best = 0;
-  streakEl.textContent = 0;
-  bestEl.textContent = 0;
-  setClimberPos(0, false);
-  timerBar.style.width = '100%';
-  timerBar.className = 'timer-bar';
-  const q = await fetchQuestion();
-  showQuestion(q);
+  startBtn.disabled = true;
+  try {
+    const q = await fetchQuestion();
+    startBtn.style.display = 'none';
+    gameActive = true;
+    streak = 0;
+    best = 0;
+    streakEl.textContent = 0;
+    bestEl.textContent = 0;
+    setClimberPos(0, false);
+    timerBar.style.width = '100%';
+    timerBar.className = 'timer-bar';
+    showQuestion(q);
+  } catch (e) {
+    console.error('Start failed:', e);
+    startBtn.disabled = false;
+  }
 });
 </script>
 </body>
