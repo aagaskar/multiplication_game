@@ -589,11 +589,15 @@ function handleDunno() {
   fbEl.className = 'feedback wrong';
   input.className = 'answer-input wrong';
   input.disabled = true;
+  climber.classList.remove('wobble');
+  timerBar.style.width = '100%';
+  timerBar.className = 'timer-bar';
 
   // Add card to sidebar that fades over 1 minute
   addDunnoCard(q);
 
-  triggerFall();
+  // Move on without falling — no streak reset
+  nextRound();
 }
 
 function addDunnoCard(q) {
