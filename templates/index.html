@@ -22,7 +22,6 @@
     gap: 60px;
     align-items: flex-end;
     position: relative;
-    transition: transform 0.45s ease;
   }
 
   /* --- Ladder & Climber --- */
@@ -30,7 +29,6 @@
     position: relative;
     width: 120px;
     height: 520px;
-    transition: height 0.45s ease;
   }
 
   .ladder {
@@ -39,10 +37,8 @@
     left: 50%;
     transform: translateX(-50%);
     width: 60px;
-    transition: height 0.45s ease;
+    height: 500px;
   }
-
-  /* SVG ladder drawn in JS */
 
   .climber-wrap {
     position: absolute;
@@ -61,9 +57,56 @@
     transition: bottom 0.6s cubic-bezier(.55,.06,.68,.19);
   }
 
+  .climber-wrap.ascending {
+    transition: bottom 0.5s ease-in;
+  }
+
   @keyframes wobble {
     0%   { transform: translateX(-50%) rotate(-8deg); }
     100% { transform: translateX(-50%) rotate(8deg); }
+  }
+
+  /* Floor indicator */
+  .floor-badge {
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #5b9fff;
+    color: #fff;
+    font-weight: 800;
+    font-size: 14px;
+    padding: 4px 12px;
+    border-radius: 10px;
+    white-space: nowrap;
+    z-index: 3;
+    transition: transform 0.3s ease, background 0.3s;
+  }
+
+  .floor-badge.celebrate {
+    background: #ff6b35;
+    animation: badgePop 0.6s ease-out;
+  }
+
+  @keyframes badgePop {
+    0%   { transform: translateX(-50%) scale(1); }
+    50%  { transform: translateX(-50%) scale(1.4); }
+    100% { transform: translateX(-50%) scale(1); }
+  }
+
+  /* Flash overlay for floor transition */
+  .floor-flash {
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.9);
+    z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+    border-radius: 8px;
+    transition: opacity 0.3s;
+  }
+  .floor-flash.active {
+    opacity: 1;
   }
 
   /* ground */
@@ -223,7 +266,21 @@
 <div class="game-container">
   <!-- Ladder side -->
   <div class="ladder-area">
-    <svg class="ladder" id="ladder-svg" xmlns="http://www.w3.org/2000/svg">
+    <div class="floor-badge" id="floor-badge">Floor 1</div>
+    <div class="floor-flash" id="floor-flash"></div>
+    <svg class="ladder" viewBox="0 0 60 500" xmlns="http://www.w3.org/2000/svg">
+      <rect x="8" y="0" width="6" height="500" rx="3" fill="#8B5E3C"/>
+      <rect x="46" y="0" width="6" height="500" rx="3" fill="#8B5E3C"/>
+      <line x1="14" y1="460" x2="46" y2="460" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="414" x2="46" y2="414" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="368" x2="46" y2="368" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="322" x2="46" y2="322" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="276" x2="46" y2="276" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="230" x2="46" y2="230" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="184" x2="46" y2="184" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="138" x2="46" y2="138" stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="92"  x2="46" y2="92"  stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
+      <line x1="14" y1="46"  x2="46" y2="46"  stroke="#a0723c" stroke-width="5" stroke-linecap="round"/>
     </svg>
 
     <div class="climber-wrap" id="climber">
@@ -266,96 +323,80 @@
 <script>
 const WOBBLE_TIME  = 5000;
 const FALL_TIME    = 10000;
+const RUNGS_PER_FLOOR = 10;
 const RUNG_PX      = 46;   // pixels per rung
-const BASE_RUNGS   = 10;   // initial visible rungs
 
-const climber      = document.getElementById('climber');
-const ladderSvg    = document.getElementById('ladder-svg');
-const ladderArea   = document.querySelector('.ladder-area');
-const gameContainer= document.querySelector('.game-container');
-const qEl          = document.getElementById('question');
-const input        = document.getElementById('answer');
-const fbEl         = document.getElementById('feedback');
-const streakEl     = document.getElementById('streak');
-const bestEl       = document.getElementById('best');
-const timerBar     = document.getElementById('timer-bar');
-const startBtn     = document.getElementById('start-btn');
+const climber   = document.getElementById('climber');
+const qEl       = document.getElementById('question');
+const input     = document.getElementById('answer');
+const fbEl      = document.getElementById('feedback');
+const streakEl  = document.getElementById('streak');
+const bestEl    = document.getElementById('best');
+const timerBar  = document.getElementById('timer-bar');
+const startBtn  = document.getElementById('start-btn');
+const floorBadge= document.getElementById('floor-badge');
+const floorFlash= document.getElementById('floor-flash');
 
 let streak = 0;
 let best   = 0;
-let current = null;   // {a, b, answer}
+let floor  = 1;
+let current = null;
 let questionStart = 0;
 let timerRAF = null;
 let wobbling = false;
 let gameActive = false;
-let drawnRungs = 0;
+let transitioning = false;
 
-function buildLadder(numRungs) {
-  if (numRungs <= drawnRungs) return;
-  const h = 20 + numRungs * RUNG_PX;
-  ladderSvg.setAttribute('viewBox', `0 0 60 ${h}`);
-  ladderSvg.style.height = h + 'px';
-  ladderSvg.innerHTML = '';
-
-  // side rails
-  const r1 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  r1.setAttribute('x','8'); r1.setAttribute('y','0');
-  r1.setAttribute('width','6'); r1.setAttribute('height', h);
-  r1.setAttribute('rx','3'); r1.setAttribute('fill','#8B5E3C');
-  ladderSvg.appendChild(r1);
-
-  const r2 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  r2.setAttribute('x','46'); r2.setAttribute('y','0');
-  r2.setAttribute('width','6'); r2.setAttribute('height', h);
-  r2.setAttribute('rx','3'); r2.setAttribute('fill','#8B5E3C');
-  ladderSvg.appendChild(r2);
-
-  // rungs
-  for (let i = 0; i < numRungs; i++) {
-    const y = h - 20 - i * RUNG_PX;
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1','14'); line.setAttribute('x2','46');
-    line.setAttribute('y1', y); line.setAttribute('y2', y);
-    line.setAttribute('stroke','#a0723c');
-    line.setAttribute('stroke-width','5');
-    line.setAttribute('stroke-linecap','round');
-    ladderSvg.appendChild(line);
-  }
-
-  // update ladder area height
-  ladderArea.style.height = (h + 20) + 'px';
-  drawnRungs = numRungs;
-}
-
-function scrollToClimber() {
-  const viewH = window.innerHeight;
-  const climberBottom = 10 + streak * RUNG_PX;
-  // If the climber would be above the visible area, shift the container down
-  const maxVisible = viewH * 0.65; // keep climber in lower 65% of screen
-  if (climberBottom > maxVisible) {
-    const shift = climberBottom - maxVisible;
-    gameContainer.style.transform = `translateY(${shift}px)`;
-  } else {
-    gameContainer.style.transform = 'translateY(0)';
-  }
+function rungOnFloor() {
+  return streak % RUNGS_PER_FLOOR;
 }
 
 function setClimberPos(rung, animate = true) {
-  // Grow ladder if needed (always stay 3 rungs ahead)
-  const needed = Math.max(BASE_RUNGS, rung + 3);
-  buildLadder(needed);
-
   const bottom = 10 + rung * RUNG_PX;
   if (!animate) climber.style.transition = 'none';
   climber.style.bottom = bottom + 'px';
   if (!animate) requestAnimationFrame(() => climber.style.transition = '');
+}
 
-  // Scroll view to follow climber
-  if (animate) {
-    setTimeout(() => scrollToClimber(), 50);
-  } else {
-    gameContainer.style.transform = 'translateY(0)';
-  }
+function updateFloorBadge() {
+  floorBadge.textContent = 'Floor ' + floor;
+}
+
+function triggerFloorTransition(callback) {
+  transitioning = true;
+
+  // Climber ascends off the top of the ladder
+  climber.classList.add('ascending');
+  climber.style.bottom = (10 + (RUNGS_PER_FLOOR + 2) * RUNG_PX) + 'px';
+
+  setTimeout(() => {
+    // Flash the ladder area
+    floorFlash.classList.add('active');
+
+    setTimeout(() => {
+      // Update floor
+      floor++;
+      updateFloorBadge();
+      floorBadge.classList.add('celebrate');
+
+      // Reset climber to bottom instantly
+      climber.classList.remove('ascending');
+      climber.style.transition = 'none';
+      climber.style.bottom = '10px';
+      requestAnimationFrame(() => {
+        climber.style.transition = '';
+      });
+
+      // Fade out flash
+      floorFlash.classList.remove('active');
+
+      setTimeout(() => {
+        floorBadge.classList.remove('celebrate');
+        transitioning = false;
+        callback();
+      }, 400);
+    }, 400);
+  }, 550);
 }
 
 async function fetchQuestion() {
@@ -364,7 +405,6 @@ async function fetchQuestion() {
     return await r.json();
   } catch (e) {
     console.error('Failed to fetch question:', e);
-    // Generate locally as fallback
     const a = Math.floor(Math.random() * 11) + 2;
     const b = Math.floor(Math.random() * 11) + 2;
     return { a, b, answer: a * b };
@@ -424,13 +464,10 @@ function triggerFall() {
   climber.classList.remove('wobble');
   climber.classList.add('falling');
   streak = 0;
+  floor = 1;
+  updateFloorBadge();
   streakEl.textContent = streak;
   setClimberPos(0);
-  gameContainer.style.transform = 'translateY(0)';
-  // reset ladder back to base size
-  drawnRungs = 0;
-  buildLadder(BASE_RUNGS);
-  // change mouth to sad
   document.getElementById('mouth').setAttribute('d', 'M19 20 Q24 16 29 20');
   setTimeout(() => {
     climber.classList.remove('falling');
@@ -474,9 +511,21 @@ function handleCorrect() {
   timerBar.style.width = '100%';
   timerBar.className = 'timer-bar';
 
-  setClimberPos(streak);
-  burstStars();
-  nextRound();
+  const rung = rungOnFloor();
+
+  if (rung === 0) {
+    // Just completed a floor (streak is a multiple of 10)
+    setClimberPos(RUNGS_PER_FLOOR);
+    burstStars();
+    triggerFloorTransition(async () => {
+      const q = await fetchQuestion();
+      setTimeout(() => showQuestion(q), 300);
+    });
+  } else {
+    setClimberPos(rung);
+    burstStars();
+    nextRound();
+  }
 }
 
 function handleWrong() {
@@ -499,7 +548,7 @@ input.addEventListener('input', () => {
 });
 
 input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !input.disabled && input.value.trim() !== '') {
+  if (e.key === 'Enter' && !input.disabled && !transitioning && input.value.trim() !== '') {
     const val = parseInt(input.value.trim(), 10);
     if (isNaN(val)) return;
     if (val === current.answer) {
@@ -510,9 +559,6 @@ input.addEventListener('keydown', (e) => {
   }
 });
 
-// Build initial ladder
-buildLadder(BASE_RUNGS);
-
 startBtn.addEventListener('click', async () => {
   startBtn.disabled = true;
   try {
@@ -521,10 +567,10 @@ startBtn.addEventListener('click', async () => {
     gameActive = true;
     streak = 0;
     best = 0;
+    floor = 1;
+    updateFloorBadge();
     streakEl.textContent = 0;
     bestEl.textContent = 0;
-    drawnRungs = 0;
-    buildLadder(BASE_RUNGS);
     setClimberPos(0, false);
     timerBar.style.width = '100%';
     timerBar.className = 'timer-bar';
