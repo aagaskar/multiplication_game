@@ -24,6 +24,38 @@
     position: relative;
   }
 
+  /* --- "I don't know" sidebar --- */
+  .dunno-sidebar {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 20;
+  }
+
+  .dunno-hint {
+    font-size: 13px;
+    color: #888;
+    text-align: center;
+    margin-bottom: 4px;
+    font-style: italic;
+  }
+
+  .dunno-card {
+    background: rgba(255,255,255,0.92);
+    border-radius: 10px;
+    padding: 10px 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+    font-size: 18px;
+    font-weight: 700;
+    color: #333;
+    text-align: center;
+    transition: opacity 0.5s;
+  }
+
   /* --- Ladder & Climber --- */
   .ladder-area {
     position: relative;
@@ -263,6 +295,8 @@
 <div class="cloud cloud-2"></div>
 <div class="cloud cloud-3"></div>
 
+<div class="dunno-sidebar" id="dunno-sidebar"></div>
+
 <div class="game-container">
   <!-- Ladder side -->
   <div class="ladder-area">
@@ -311,7 +345,8 @@
     <div class="streak-bar">Streak: <span id="streak">0</span></div>
     <div class="best-bar">Best: <span id="best">0</span></div>
     <div class="question" id="question">Ready?</div>
-    <input class="answer-input" id="answer" type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" disabled>
+    <input class="answer-input" id="answer" type="text" inputmode="numeric" autocomplete="off" disabled>
+    <div class="help-hint" id="help-hint" style="font-size:13px;color:#aaa;margin-top:6px;">Type <b>?</b> if you don't know</div>
     <div class="feedback" id="feedback"></div>
     <div class="timer-bar-container">
       <div class="timer-bar" id="timer-bar"></div>
@@ -325,6 +360,7 @@ const WOBBLE_TIME  = 5000;
 const FALL_TIME    = 10000;
 const RUNGS_PER_FLOOR = 10;
 const RUNG_PX      = 46;   // pixels per rung
+const DUNNO_FADE_MS = 60000; // 1 minute fade for "I don't know" cards
 
 const climber   = document.getElementById('climber');
 const qEl       = document.getElementById('question');
@@ -336,6 +372,7 @@ const timerBar  = document.getElementById('timer-bar');
 const startBtn  = document.getElementById('start-btn');
 const floorBadge= document.getElementById('floor-badge');
 const floorFlash= document.getElementById('floor-flash');
+const dunnoSidebar = document.getElementById('dunno-sidebar');
 
 let streak = 0;
 let best   = 0;
@@ -346,6 +383,9 @@ let timerRAF = null;
 let wobbling = false;
 let gameActive = false;
 let transitioning = false;
+
+// Queue of questions to re-ask (from "I don't know")
+let reaskQueue = [];
 
 function rungOnFloor() {
   return streak % RUNGS_PER_FLOOR;
@@ -400,6 +440,10 @@ function triggerFloorTransition(callback) {
 }
 
 async function fetchQuestion() {
+  // If there are questions to re-ask, use one of those
+  if (reaskQueue.length > 0) {
+    return reaskQueue.shift();
+  }
   try {
     const r = await fetch('/api/question');
     return await r.json();
@@ -537,14 +581,69 @@ function handleWrong() {
   triggerFall();
 }
 
+// --- "I don't know" (?) feature ---
+function handleDunno() {
+  cancelAnimationFrame(timerRAF);
+  const q = current;
+  fbEl.textContent = `${q.a} × ${q.b} = ${q.answer}`;
+  fbEl.className = 'feedback wrong';
+  input.className = 'answer-input wrong';
+  input.disabled = true;
+
+  // Add card to sidebar that fades over 1 minute
+  addDunnoCard(q);
+
+  triggerFall();
+}
+
+function addDunnoCard(q) {
+  const card = document.createElement('div');
+  card.className = 'dunno-card';
+  card.textContent = `${q.a} × ${q.b} = ${q.answer}`;
+  dunnoSidebar.appendChild(card);
+
+  const startTime = Date.now();
+  const fadeInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    const remaining = Math.max(0, 1 - elapsed / DUNNO_FADE_MS);
+    card.style.opacity = remaining;
+    if (remaining <= 0) {
+      clearInterval(fadeInterval);
+      card.remove();
+      // Re-ask this question
+      reaskQueue.push({ a: q.a, b: q.b, answer: q.answer });
+    }
+  }, 200);
+}
+
 async function nextRound() {
   const q = await fetchQuestion();
   setTimeout(() => showQuestion(q), 600);
 }
 
-// Only allow digits
+// Allow digits and ?
 input.addEventListener('input', () => {
-  input.value = input.value.replace(/[^0-9]/g, '');
+  const raw = input.value;
+
+  // Check for ? — treat as "I don't know"
+  if (raw.includes('?')) {
+    input.value = '';
+    if (!input.disabled && !transitioning && current) {
+      handleDunno();
+    }
+    return;
+  }
+
+  // Only allow digits
+  input.value = raw.replace(/[^0-9]/g, '');
+
+  // Auto-submit: if typed value matches correct answer, submit immediately
+  if (!input.disabled && !transitioning && current && input.value !== '') {
+    const val = parseInt(input.value, 10);
+    if (val === current.answer) {
+      handleCorrect();
+    }
+  }
 });
 
 input.addEventListener('keydown', (e) => {
@@ -568,6 +667,8 @@ startBtn.addEventListener('click', async () => {
     streak = 0;
     best = 0;
     floor = 1;
+    reaskQueue = [];
+    dunnoSidebar.innerHTML = '';
     updateFloorBadge();
     streakEl.textContent = 0;
     bestEl.textContent = 0;
